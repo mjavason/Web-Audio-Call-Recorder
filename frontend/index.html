@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>WebRTC Audio Call</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+      #log {
+        border: 1px solid #ccc;
+        padding: 10px;
+        width: 80%;
+        height: 200px;
+        overflow-y: scroll;
+        margin: 10px 0;
+      }
+      #incoming-call {
+        display: none;
+        border: 1px solid #000;
+        padding: 10px;
+        background-color: #f0f0f0;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+      }
+    </style>
+  </head>
+  <body>
+    <h1 id="fillIn">WebRTC Audio Call</h1>
+
+    <input type="text" id="userId" placeholder="Your ID" />
+    <input type="text" id="calleeId" placeholder="Callee ID" />
+    <button id="register">Register</button>
+    <button id="call">Call</button>
+    <button id="hangup">Hang Up</button>
+    <audio id="localAudio" autoplay muted></audio>
+    <audio id="remoteAudio" autoplay></audio>
+    <div id="log"></div>
+
+    <div id="incoming-call">
+      <p>Incoming call from <span id="caller-id"></span></p>
+      <button id="accept">Accept</button>
+      <button id="decline">Decline</button>
+    </div>
+
+    <script src="configs.js"></script>
+    <script>
+      let localStream;
+
+      const startLocalStream = async () => {
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+          localAudio.srcObject = localStream;
+          localStream
+            .getTracks()
+            .forEach((track) => peerConnection.addTrack(track, localStream));
+        } catch (error) {
+          log('Error accessing audio devices.');
+        }
+      };
+
+      document.getElementById('register').addEventListener('click', () => {
+        socket.emit('register', userIdInput.value);
+        log('Registered successfully.');
+        startLocalStream();
+      });
+
+      document.getElementById('call').addEventListener('click', async () => {
+        const offer = await peerConnection.createOffer({
+          offerToReceiveAudio: 1,
+        });
+        await peerConnection.setLocalDescription(offer);
+        socket.emit('signal', {
+          type: 'offer',
+          sdp: peerConnection.localDescription.sdp,
+          from: userIdInput.value,
+          to: calleeIdInput.value,
+        });
+        log('Calling...');
+      });
+
+      document.getElementById('hangup').addEventListener('click', () => {
+        peerConnection.close();
+        // localStream.getTracks().forEach((track) => track.stop());
+        log('Call ended.');
+      });
+
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit('signal', {
+            type: 'candidate',
+            candidate: event.candidate,
+            from: userIdInput.value,
+            to: calleeIdInput.value,
+          });
+        }
+      };
+
+      peerConnection.ontrack = (event) => {
+        remoteAudio.srcObject = event.streams[0];
+        log('Connected.');
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        if (
+          peerConnection.connectionState === 'disconnected' ||
+          peerConnection.connectionState === 'closed'
+        ) {
+          peerConnection.close();
+          // localStream.getTracks().forEach((track) => track.stop());
+          log('Call ended.');
+        }
+      };
+
+      socket.on('signal', async (data) => {
+        if (data.type === 'offer') {
+          await peerConnection.setRemoteDescription(
+            new RTCSessionDescription(data)
+          );
+          incomingCallDiv.style.display = 'block';
+          callerIdSpan.textContent = data.from;
+          log('Ringing...');
+
+          acceptButton.onclick = async () => {
+            incomingCallDiv.style.display = 'none';
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit('signal', {
+              type: 'answer',
+              sdp: peerConnection.localDescription.sdp,
+              to: data.from,
+              from: userIdInput.value,
+            });
+            log('Call connected.');
+          };
+
+          declineButton.onclick = () => {
+            socket.emit('message', {
+              type: 'decline',
+              message: 'Line busy! Called declined.',
+              to: data.from,
+              from: userIdInput.value,
+            });
+            incomingCallDiv.style.display = 'none';
+            log('Call declined.');
+          };
+        } else if (data.type === 'answer') {
+          await peerConnection.setRemoteDescription(
+            new RTCSessionDescription(data)
+          );
+          log('Call connected.');
+        } else if (data.type === 'candidate') {
+          await peerConnection.addIceCandidate(
+            new RTCIceCandidate(data.candidate)
+          );
+        }
+      });
+
+      socket.on('message', (data) => {
+        if (data.type === 'decline') {
+          peerConnection.close();
+          log(data.message);
+        }
+      });
+    </script>
+  </body>
+</html>
