@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>WebRTC Audio Call</title>
+    <title>WebRTC Audio Call with Recording</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
       #log {
@@ -42,8 +42,38 @@
       <button id="decline">Decline</button>
     </div>
 
-    <script src="configs.js"></script>
     <script>
+      // const apiURL = 'https://web-audio-call-recorder-backend.onrender.com';
+      const apiURL = 'http://localhost:5000';
+      const socket = io(apiURL);
+
+      const userIdInput = document.getElementById('userId');
+      const calleeIdInput = document.getElementById('calleeId');
+      const localAudio = document.getElementById('localAudio');
+      const remoteAudio = document.getElementById('remoteAudio');
+      const logDiv = document.getElementById('log');
+      const incomingCallDiv = document.getElementById('incoming-call');
+      const callerIdSpan = document.getElementById('caller-id');
+      const acceptButton = document.getElementById('accept');
+      const declineButton = document.getElementById('decline');
+      let mediaRecorder;
+      let recordedChunks = [];
+
+      const log = (message) => {
+        logDiv.innerHTML += message + '<br>';
+        logDiv.scrollTop = logDiv.scrollHeight;
+      };
+
+      const peerConnection = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' },
+        ],
+      });
+
       let localStream;
 
       const startLocalStream = async () => {
@@ -82,7 +112,7 @@
 
       document.getElementById('hangup').addEventListener('click', () => {
         peerConnection.close();
-        // localStream.getTracks().forEach((track) => track.stop());
+        stopRecording();
         log('Call ended.');
       });
 
@@ -98,8 +128,10 @@
       };
 
       peerConnection.ontrack = (event) => {
-        remoteAudio.srcObject = event.streams[0];
-        log('Connected.');
+        const remoteStream = event.streams[0];
+        remoteAudio.srcObject = remoteStream;
+        log('Connected to remote audio.');
+        startRecording(remoteStream);
       };
 
       peerConnection.onconnectionstatechange = () => {
@@ -108,7 +140,7 @@
           peerConnection.connectionState === 'closed'
         ) {
           peerConnection.close();
-          // localStream.getTracks().forEach((track) => track.stop());
+          stopRecording();
           log('Call ended.');
         }
       };
@@ -138,7 +170,7 @@
           declineButton.onclick = () => {
             socket.emit('message', {
               type: 'decline',
-              message: 'Line busy! Called declined.',
+              message: 'Line busy! Call declined.',
               to: data.from,
               from: userIdInput.value,
             });
@@ -163,6 +195,39 @@
           log(data.message);
         }
       });
+
+      // Function to start recording the remote stream
+      function startRecording(stream) {
+        mediaRecorder = new MediaRecorder(stream);
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            recordedChunks.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = () => {
+          const recordedBlob = new Blob(recordedChunks, { type: 'audio/webm' });
+          const audioUrl = URL.createObjectURL(recordedBlob);
+
+          const downloadLink = document.createElement('a');
+          downloadLink.href = audioUrl;
+          downloadLink.download = 'recorded_audio.webm';
+          downloadLink.textContent = 'Download Recorded Audio';
+          document.body.appendChild(downloadLink);
+        };
+
+        mediaRecorder.start();
+        log('Recording started.');
+      }
+
+      // Function to stop recording
+      function stopRecording() {
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+          mediaRecorder.stop();
+          log('Recording stopped.');
+        }
+      }
     </script>
   </body>
 </html>
