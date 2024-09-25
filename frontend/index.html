@@ -77,7 +77,7 @@
             formData.append('audio', blob, 'call.wav');
 
             // Send the audio file to the server (assuming the server has an upload endpoint)
-            fetch('http://localhost:3000/upload', {
+            fetch(`${apiURL}/upload`, {
               method: 'POST',
               body: formData,
             })

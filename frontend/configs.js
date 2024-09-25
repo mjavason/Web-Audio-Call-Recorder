@@ -1,5 +1,6 @@
-const socket = io('http://localhost:3000');
-// const socket = io('https://call-ring-prototype-backend.onrender.com');
+const apiURL = 'https://web-audio-call-recorder-backend.onrender.com';
+// const apiURL ='http://localhost:3000';
+const socket = io(apiURL);
 
 const userIdInput = document.getElementById('userId');
 const calleeIdInput = document.getElementById('calleeId');
@@ -10,6 +11,7 @@ const incomingCallDiv = document.getElementById('incoming-call');
 const callerIdSpan = document.getElementById('caller-id');
 const acceptButton = document.getElementById('accept');
 const declineButton = document.getElementById('decline');
+
 // const fillIn = document.getElementById('fillIn');
 
 const log = (message) => {
