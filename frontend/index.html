@@ -44,7 +44,6 @@
 
     <script>
       const apiURL = 'https://web-audio-call-recorder-backend.onrender.com';
-      // const apiURL = 'http://localhost:5000';
       const socket = io(apiURL);
 
       const userIdInput = document.getElementById('userId');
@@ -208,7 +207,7 @@
 
         // Add remote stream's audio tracks to combined stream
         remoteStream.getTracks().forEach((track) => {
-          combinedStream.addTrack(track);
+          combinedStream.addTrack(track); // Ensure all remote tracks are added
         });
 
         // Start recording both local and remote audio streams
