@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>WebRTC Audio Call with Recording</title>
+    <title>WebRTC Audio Call with Recording (Local + Remote)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
       #log {
@@ -43,8 +43,8 @@
     </div>
 
     <script>
-      // const apiURL = 'https://web-audio-call-recorder-backend.onrender.com';
-      const apiURL = 'http://localhost:5000';
+      const apiURL = 'https://web-audio-call-recorder-backend.onrender.com';
+      // const apiURL = 'http://localhost:5000';
       const socket = io(apiURL);
 
       const userIdInput = document.getElementById('userId');
@@ -58,6 +58,7 @@
       const declineButton = document.getElementById('decline');
       let mediaRecorder;
       let recordedChunks = [];
+      let combinedStream = new MediaStream(); // Stream to combine local + remote
 
       const log = (message) => {
         logDiv.innerHTML += message + '<br>';
@@ -71,6 +72,78 @@
           { urls: 'stun:stun2.l.google.com:19302' },
           { urls: 'stun:stun3.l.google.com:19302' },
           { urls: 'stun:stun4.l.google.com:19302' },
+          {
+            urls: 'stun:stun.services.mozilla.com',
+            username: '',
+            credential: '',
+          },
+          {
+            urls: 'stun:stun.stunprotocol.org:3478',
+            username: '',
+            credential: '',
+          },
+          {
+            urls: 'stun:stun.voipbuster.com',
+            username: '',
+            credential: '',
+          },
+          {
+            urls: 'stun:stun.voipstunt.com',
+            username: '',
+            credential: '',
+          },
+          {
+            urls: 'stun:stun.voxgratia.org',
+            username: '',
+            credential: '',
+          },
+          {
+            urls: 'stun:stun.xten.com',
+            username: '',
+            credential: '',
+          },
+          {
+            urls: 'stun:stun.schlund.de',
+            username: '',
+            credential: '',
+          },
+          {
+            urls: 'stun:stun.iptel.org',
+            username: '',
+            credential: '',
+          },
+
+          //Premium TURN Servers. Register on https://dashboard.metered.ca/signup to get yours for free
+          //The calls with external devices will hardly connect without them
+          {
+            urls: 'stun:stun.relay.metered.ca:80',
+          },
+          {
+            urls: 'turn:global.relay.metered.ca:80',
+            username: '5dde2d2045285ff71a3bfabd',
+            credential: 'ePktKiKENLHvMBA4',
+          },
+          {
+            urls: 'turn:global.relay.metered.ca:80?transport=tcp',
+            username: '5dde2d2045285ff71a3bfabd',
+            credential: 'ePktKiKENLHvMBA4',
+          },
+          {
+            urls: 'turn:global.relay.metered.ca:443',
+            username: '5dde2d2045285ff71a3bfabd',
+            credential: 'ePktKiKENLHvMBA4',
+          },
+          {
+            urls: 'turns:global.relay.metered.ca:443?transport=tcp',
+            username: '5dde2d2045285ff71a3bfabd',
+            credential: 'ePktKiKENLHvMBA4',
+          },
+          // Express turn
+          // {
+          //   urls: 'relay1.expressturn.com:3478',
+          //   username: 'efYNM7FLFH0TGPR1RA',
+          //   credential: 'Wcyy9dXmtIakraMH',
+          // },
         ],
       });
 
@@ -82,9 +155,10 @@
             audio: true,
           });
           localAudio.srcObject = localStream;
-          localStream
-            .getTracks()
-            .forEach((track) => peerConnection.addTrack(track, localStream));
+          localStream.getTracks().forEach((track) => {
+            peerConnection.addTrack(track, localStream);
+            combinedStream.addTrack(track); // Add local track to combined stream
+          });
         } catch (error) {
           log('Error accessing audio devices.');
         }
@@ -131,7 +205,14 @@
         const remoteStream = event.streams[0];
         remoteAudio.srcObject = remoteStream;
         log('Connected to remote audio.');
-        startRecording(remoteStream);
+
+        // Add remote stream's audio tracks to combined stream
+        remoteStream.getTracks().forEach((track) => {
+          combinedStream.addTrack(track);
+        });
+
+        // Start recording both local and remote audio streams
+        startRecording(combinedStream);
       };
 
       peerConnection.onconnectionstatechange = () => {
@@ -196,7 +277,7 @@
         }
       });
 
-      // Function to start recording the remote stream
+      // Function to start recording the combined stream
       function startRecording(stream) {
         mediaRecorder = new MediaRecorder(stream);
 
