@@ -1,8 +1,11 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
-    <title>WebRTC Audio Call</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebRTC Audio Call with Recording</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.webrtc-experiment.com/RecordRTC.js"></script>
     <style>
       #log {
         border: 1px solid #ccc;
@@ -25,7 +28,7 @@
     </style>
   </head>
   <body>
-    <h1 id="fillIn">WebRTC Audio Call</h1>
+    <h1>WebRTC Audio Call with Recording</h1>
 
     <input type="text" id="userId" placeholder="Your ID" />
     <input type="text" id="calleeId" placeholder="Callee ID" />
@@ -45,6 +48,7 @@
     <script src="configs.js"></script>
     <script>
       let localStream;
+      let recorder; // For recording audio
 
       const startLocalStream = async () => {
         try {
@@ -55,8 +59,31 @@
           localStream
             .getTracks()
             .forEach((track) => peerConnection.addTrack(track, localStream));
+
+          // Start recording local audio using RecordRTC
+          recorder = RecordRTC(localStream, { type: 'audio' });
+          recorder.startRecording();
+          log('Started recording...');
         } catch (error) {
           log('Error accessing audio devices.');
+        }
+      };
+
+      const stopRecordingAndSend = () => {
+        if (recorder) {
+          recorder.stopRecording(() => {
+            const blob = recorder.getBlob();
+            const formData = new FormData();
+            formData.append('audio', blob, 'call.wav');
+
+            // Send the audio file to the server (assuming the server has an upload endpoint)
+            fetch('http://localhost:3000/upload', {
+              method: 'POST',
+              body: formData,
+            })
+              .then((response) => log('Recording uploaded successfully.'))
+              .catch((error) => log('Failed to upload recording.'));
+          });
         }
       };
 
@@ -71,6 +98,7 @@
           offerToReceiveAudio: 1,
         });
         await peerConnection.setLocalDescription(offer);
+
         socket.emit('signal', {
           type: 'offer',
           sdp: peerConnection.localDescription.sdp,
@@ -82,8 +110,10 @@
 
       document.getElementById('hangup').addEventListener('click', () => {
         peerConnection.close();
-        // localStream.getTracks().forEach((track) => track.stop());
         log('Call ended.');
+
+        // Stop recording when the call ends
+        stopRecordingAndSend();
       });
 
       peerConnection.onicecandidate = (event) => {
@@ -108,7 +138,6 @@
           peerConnection.connectionState === 'closed'
         ) {
           peerConnection.close();
-          // localStream.getTracks().forEach((track) => track.stop());
           log('Call ended.');
         }
       };
@@ -126,6 +155,7 @@
             incomingCallDiv.style.display = 'none';
             const answer = await peerConnection.createAnswer();
             await peerConnection.setLocalDescription(answer);
+
             socket.emit('signal', {
               type: 'answer',
               sdp: peerConnection.localDescription.sdp,
@@ -138,7 +168,7 @@
           declineButton.onclick = () => {
             socket.emit('message', {
               type: 'decline',
-              message: 'Line busy! Called declined.',
+              message: 'Line busy! Call declined.',
               to: data.from,
               from: userIdInput.value,
             });

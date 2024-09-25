@@ -1,5 +1,5 @@
-// const socket = io('http://localhost:3000');
-const socket = io('https://call-ring-prototype-backend.onrender.com');
+const socket = io('http://localhost:3000');
+// const socket = io('https://call-ring-prototype-backend.onrender.com');
 
 const userIdInput = document.getElementById('userId');
 const calleeIdInput = document.getElementById('calleeId');
@@ -10,21 +10,21 @@ const incomingCallDiv = document.getElementById('incoming-call');
 const callerIdSpan = document.getElementById('caller-id');
 const acceptButton = document.getElementById('accept');
 const declineButton = document.getElementById('decline');
-const fillIn = document.getElementById('fillIn');
+// const fillIn = document.getElementById('fillIn');
 
 const log = (message) => {
   logDiv.innerHTML += message + '<br>';
   logDiv.scrollTop = logDiv.scrollHeight;
 };
 
-fillIn.addEventListener('click', () => {
-  userIdInput.value = 'two';
-  calleeIdInput.value = 'one';
+// fillIn.addEventListener('click', () => {
+//   userIdInput.value = 'two';
+//   calleeIdInput.value = 'one';
 
-  socket.emit('register', userIdInput.value);
-  log('Registered successfully.');
-  startLocalStream();
-});
+//   socket.emit('register', userIdInput.value);
+//   log('Registered successfully.');
+//   startLocalStream();
+// });
 
 const peerConnection = new RTCPeerConnection({
   iceServers: [
