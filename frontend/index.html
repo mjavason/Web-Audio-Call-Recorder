@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>WebRTC Audio Call with Recording (Local + Remote)</title>
+    <title>WebRTC Audio Call with Separate Recording</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
       #log {
@@ -25,7 +25,7 @@
     </style>
   </head>
   <body>
-    <h1 id="fillIn">WebRTC Audio Call</h1>
+    <h1>WebRTC Audio Call</h1>
 
     <input type="text" id="userId" placeholder="Your ID" />
     <input type="text" id="calleeId" placeholder="Callee ID" />
@@ -43,7 +43,8 @@
     </div>
 
     <script>
-      const apiURL = 'https://web-audio-call-recorder-backend.onrender.com';
+      // const apiURL = 'https://web-audio-call-recorder-backend.onrender.com';
+      const apiURL = 'http://localhost:5000';
       const socket = io(apiURL);
 
       const userIdInput = document.getElementById('userId');
@@ -55,9 +56,13 @@
       const callerIdSpan = document.getElementById('caller-id');
       const acceptButton = document.getElementById('accept');
       const declineButton = document.getElementById('decline');
-      let mediaRecorder;
-      let recordedChunks = [];
-      let combinedStream = new MediaStream(); // Stream to combine local + remote
+
+      let localStream;
+      let remoteStream;
+      let localRecorder;
+      let remoteRecorder;
+      let localChunks = [];
+      let remoteChunks = [];
 
       const log = (message) => {
         logDiv.innerHTML += message + '<br>';
@@ -146,18 +151,36 @@
         ],
       });
 
-      let localStream;
-
       const startLocalStream = async () => {
         try {
           localStream = await navigator.mediaDevices.getUserMedia({
             audio: true,
           });
           localAudio.srcObject = localStream;
-          localStream.getTracks().forEach((track) => {
-            peerConnection.addTrack(track, localStream);
-            combinedStream.addTrack(track); // Add local track to combined stream
-          });
+
+          // Initialize recorder for local audio
+          localRecorder = new MediaRecorder(localStream);
+          localRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+              localChunks.push(event.data);
+            }
+          };
+
+          localRecorder.onstop = () => {
+            const localBlob = new Blob(localChunks, { type: 'audio/webm' });
+            const localUrl = URL.createObjectURL(localBlob);
+            const localDownloadLink = document.createElement('a');
+            localDownloadLink.href = localUrl;
+            localDownloadLink.download = 'local_audio.webm';
+            localDownloadLink.textContent = 'Download Local Audio';
+            document.body.appendChild(localDownloadLink);
+          };
+
+          localRecorder.start();
+
+          localStream
+            .getTracks()
+            .forEach((track) => peerConnection.addTrack(track, localStream));
         } catch (error) {
           log('Error accessing audio devices.');
         }
@@ -185,7 +208,8 @@
 
       document.getElementById('hangup').addEventListener('click', () => {
         peerConnection.close();
-        stopRecording();
+        localRecorder.stop(); // Stop local recording
+        if (remoteRecorder) remoteRecorder.stop(); // Stop remote recording if exists
         log('Call ended.');
       });
 
@@ -201,17 +225,32 @@
       };
 
       peerConnection.ontrack = (event) => {
-        const remoteStream = event.streams[0];
+        remoteStream = event.streams[0];
         remoteAudio.srcObject = remoteStream;
         log('Connected to remote audio.');
 
-        // Add remote stream's audio tracks to combined stream
-        remoteStream.getTracks().forEach((track) => {
-          combinedStream.addTrack(track); // Ensure all remote tracks are added
-        });
+        // Initialize recorder for remote audio
+        remoteRecorder = new MediaRecorder(remoteStream);
+        remoteRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            remoteChunks.push(event.data);
+          }
+        };
 
-        // Start recording both local and remote audio streams
-        startRecording(combinedStream);
+        remoteRecorder.onstop = () => {
+          const remoteBlob = new Blob(remoteChunks, { type: 'audio/webm' });
+          const remoteUrl = URL.createObjectURL(remoteBlob);
+          const remoteDownloadLink = document.createElement('a');
+          remoteDownloadLink.href = remoteUrl;
+          remoteDownloadLink.download = 'remote_audio.webm';
+          remoteDownloadLink.textContent = 'Download Remote Audio';
+          document.body.appendChild(remoteDownloadLink);
+
+          // Combine the audio files
+          combineAudio(localBlob, remoteBlob);
+        };
+
+        remoteRecorder.start(); // Start remote recording
       };
 
       peerConnection.onconnectionstatechange = () => {
@@ -220,7 +259,8 @@
           peerConnection.connectionState === 'closed'
         ) {
           peerConnection.close();
-          stopRecording();
+          localRecorder.stop(); // Stop local recording
+          if (remoteRecorder) remoteRecorder.stop(); // Stop remote recording if exists
           log('Call ended.');
         }
       };
@@ -276,37 +316,47 @@
         }
       });
 
-      // Function to start recording the combined stream
-      function startRecording(stream) {
-        mediaRecorder = new MediaRecorder(stream);
+      // Function to combine local and remote audio
+      function combineAudio(localBlob, remoteBlob) {
+        const audioContext = new (window.AudioContext ||
+          window.webkitAudioContext)();
+        const combinedBuffer = audioContext.createBuffer(
+          2,
+          audioContext.sampleRate * 10,
+          audioContext.sampleRate
+        );
 
-        mediaRecorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            recordedChunks.push(event.data);
-          }
-        };
+        // Decode audio data
+        const promises = [
+          audioContext.decodeAudioData(localBlob.arrayBuffer()),
+          audioContext.decodeAudioData(remoteBlob.arrayBuffer()),
+        ];
 
-        mediaRecorder.onstop = () => {
-          const recordedBlob = new Blob(recordedChunks, { type: 'audio/webm' });
-          const audioUrl = URL.createObjectURL(recordedBlob);
+        Promise.all(promises).then((buffers) => {
+          const localAudioBuffer = buffers[0];
+          const remoteAudioBuffer = buffers[1];
 
-          const downloadLink = document.createElement('a');
-          downloadLink.href = audioUrl;
-          downloadLink.download = 'recorded_audio.webm';
-          downloadLink.textContent = 'Download Recorded Audio';
-          document.body.appendChild(downloadLink);
-        };
+          // Copy local audio
+          combinedBuffer
+            .getChannelData(0)
+            .set(localAudioBuffer.getChannelData(0));
+          combinedBuffer
+            .getChannelData(1)
+            .set(remoteAudioBuffer.getChannelData(0));
 
-        mediaRecorder.start();
-        log('Recording started.');
-      }
-
-      // Function to stop recording
-      function stopRecording() {
-        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-          mediaRecorder.stop();
-          log('Recording stopped.');
-        }
+          // Create a new audio file
+          audioContext.startRendering().then((renderedBuffer) => {
+            const combinedBlob = new Blob([renderedBuffer], {
+              type: 'audio/webm',
+            });
+            const combinedUrl = URL.createObjectURL(combinedBlob);
+            const combinedDownloadLink = document.createElement('a');
+            combinedDownloadLink.href = combinedUrl;
+            combinedDownloadLink.download = 'combined_audio.webm';
+            combinedDownloadLink.textContent = 'Download Combined Audio';
+            document.body.appendChild(combinedDownloadLink);
+          });
+        });
       }
     </script>
   </body>
